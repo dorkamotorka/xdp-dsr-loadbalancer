@@ -84,23 +84,6 @@ static __always_inline void log_fib_error(int rc) {
   }
 }
 
-static __always_inline __u16 recalc_ip_checksum(struct iphdr *ip) {
-  // Clear checksum
-  ip->check = 0;
-
-  // Compute incremental checksum difference over the header
-  __u64 csum = bpf_csum_diff(0, 0, (unsigned int *)ip, sizeof(struct iphdr), 0);
-
-// fold 64-bit csum to 16 bits (the “carry add” loop)
-#pragma unroll
-  for (int i = 0; i < 4; i++) {
-    if (csum >> 16)
-      csum = (csum & 0xffff) + (csum >> 16);
-  }
-
-  return ~csum;
-}
-
 static __always_inline int fib_lookup_v4_full(struct xdp_md *ctx,
                                               struct bpf_fib_lookup *fib,
                                               __u32 src, __u32 dst,
@@ -175,8 +158,6 @@ int xdp_load_balancer(struct xdp_md *ctx) {
              eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3],
              eth->h_dest[4], eth->h_dest[5]);
 
-    bpf_printk("Packet from client because no such connection exists yet");
-
     // Choose backend using consistent hashing (no routing table needed)
     // Hash the 4-tuple for persistent backend routing
     // (Could also be 5-tuple but we only showcase TCP traffic load balancing)
@@ -209,12 +190,10 @@ int xdp_load_balancer(struct xdp_md *ctx) {
       return XDP_PASS;
     }
 
-    // ONLY replace destination MAC with backends' MAC
     // Backend needs to have a virtual IP on the lo (same one as load balancer)
+    // DSR is layer 3 and will see the source IP is client, so it will respond directly to client
+    __builtin_memcpy(eth->h_source, fib.smac, ETH_ALEN);
     __builtin_memcpy(eth->h_dest, fib.dmac, ETH_ALEN);
-
-  // We need to recalculate IP checksum because we modified the IP header
-  ip->check = recalc_ip_checksum(ip);
 
   // We don’t need to recalculate a Ethernet frame checksum after changing
   // Ethernet MACs because the Ethernet frame checksum (FCS) isn’t in the header
