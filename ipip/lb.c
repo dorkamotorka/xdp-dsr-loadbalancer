@@ -267,13 +267,14 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   // but instead is automatically recomputed by the NIC hardware when the packet
   // is transmitted.
 
-  bpf_printk("OUT: SRC IP %pI4 -> DST IP %pI4", &ip->saddr, &ip->daddr);
+  bpf_printk("[OUTER] OUT: SRC IP %pI4 -> DST IP %pI4", &outer->saddr, &outer->daddr);
+  bpf_printk("[INNER] OUT: SRC IP %pI4 -> DST IP %pI4", &inner->saddr, &inner->daddr);
   bpf_printk("OUT: SRC MAC %02x:%02x:%02x:%02x:%02x:%02x -> DST MAC "
              "%02x:%02x:%02x:%02x:%02x:%02x",
-             eth->h_source[0], eth->h_source[1], eth->h_source[2],
-             eth->h_source[3], eth->h_source[4], eth->h_source[5],
-             eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3],
-             eth->h_dest[4], eth->h_dest[5]);
+             new_eth->h_source[0], new_eth->h_source[1], new_eth->h_source[2],
+             new_eth->h_source[3], new_eth->h_source[4], new_eth->h_source[5],
+             new_eth->h_dest[0], new_eth->h_dest[1], new_eth->h_dest[2], new_eth->h_dest[3],
+             new_eth->h_dest[4], new_eth->h_dest[5]);
 
   // Return XDP_TX to transmit the modified packet back to the network
   return XDP_TX;
