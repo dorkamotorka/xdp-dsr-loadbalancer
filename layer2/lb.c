@@ -158,42 +158,43 @@ int xdp_load_balancer(struct xdp_md *ctx) {
              eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3],
              eth->h_dest[4], eth->h_dest[5]);
 
-    // Choose backend using consistent hashing (no routing table needed)
-    // Hash the 4-tuple for persistent backend routing
-    // (Could also be 5-tuple but we only showcase TCP traffic load balancing)
-    // Perform modulo with the number of backends which we hardcode for
-    // simplicity
-    struct four_tuple_t four_tuple;
-    four_tuple.src_ip = ip->saddr;
-    four_tuple.dst_ip = ip->daddr;
-    four_tuple.src_port =
-        tcp->source; // NOTE: The client source port can change, that's why
-                     // different backend are queried on consequitive request
-                     // from the same client!
-    four_tuple.dst_port = tcp->dest;
-    __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
-    struct endpoint *backend = bpf_map_lookup_elem(&backends, &key);
-    if (!backend) {
-      return XDP_PASS;
-    }
+  // Choose backend using consistent hashing (no routing table needed)
+  // Hash the 4-tuple for persistent backend routing
+  // (Could also be 5-tuple but we only showcase TCP traffic load balancing)
+  // Perform modulo with the number of backends which we hardcode for
+  // simplicity
+  struct four_tuple_t four_tuple;
+  four_tuple.src_ip = ip->saddr;
+  four_tuple.dst_ip = ip->daddr;
+  four_tuple.src_port =
+      tcp->source; // NOTE: The client source port can change, that's why
+                   // different backend are queried on consequitive request
+                   // from the same client!
+  four_tuple.dst_port = tcp->dest;
+  __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
+  struct endpoint *backend = bpf_map_lookup_elem(&backends, &key);
+  if (!backend) {
+    return XDP_PASS;
+  }
 
-    // Perform a FIB lookup
-    // In other words: How do I reach this IP network?” → “Use this interface
-    // (and maybe this next hop)”. Depending on the flag you provide to
-    // bpf_fib_lookup(), it changes how the lookup behaves - check tutorial
-    // content for more info
-    struct bpf_fib_lookup fib = {};
-    int rc = fib_lookup_v4_full(ctx, &fib, ip->daddr, backend->ip,
-                                bpf_ntohs(ip->tot_len));
-    if (rc != BPF_FIB_LKUP_RET_SUCCESS) {
-      log_fib_error(rc);
-      return XDP_PASS;
-    }
+  // Perform a FIB lookup
+  // In other words: How do I reach this IP network?” → “Use this interface
+  // (and maybe this next hop)”. Depending on the flag you provide to
+  // bpf_fib_lookup(), it changes how the lookup behaves - check tutorial
+  // content for more info
+  struct bpf_fib_lookup fib = {};
+  int rc = fib_lookup_v4_full(ctx, &fib, ip->daddr, backend->ip,
+                              bpf_ntohs(ip->tot_len));
+  if (rc != BPF_FIB_LKUP_RET_SUCCESS) {
+    log_fib_error(rc);
+    return XDP_PASS;
+  }
 
-    // Backend needs to have a virtual IP on the lo (same one as load balancer)
-    // DSR is layer 3 and will see the source IP is client, so it will respond directly to client
-    __builtin_memcpy(eth->h_source, fib.smac, ETH_ALEN);
-    __builtin_memcpy(eth->h_dest, fib.dmac, ETH_ALEN);
+  // Backend needs to have a virtual IP on the lo (same one as load balancer)
+  // DSR is layer 3 and will see the source IP is client, so it will respond
+  // directly to client
+  __builtin_memcpy(eth->h_source, fib.smac, ETH_ALEN);
+  __builtin_memcpy(eth->h_dest, fib.dmac, ETH_ALEN);
 
   // We don’t need to recalculate a Ethernet frame checksum after changing
   // Ethernet MACs because the Ethernet frame checksum (FCS) isn’t in the header
