@@ -27,6 +27,14 @@ struct {
   __type(value, struct endpoint);
 } backends SEC(".maps");
 
+// LB Real/Node IP
+struct {
+  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, __u32);
+  __type(value, struct endpoint);
+} load_balancer SEC(".maps");
+
 // FNV-1a hash for load balancing (no need for routing table)
 static __always_inline __u32 xdp_hash_tuple(struct four_tuple_t *tuple) {
   __u32 hash = 2166136261U;
@@ -255,7 +263,14 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   outer->frag_off = 0; // you could set DF=0 here to allow fragmentation
   outer->ttl = 64;
   outer->protocol = IPPROTO_IPIP; // 4
-  outer->saddr = inner->daddr; // use VIP as outer source (keeps policy simple)
+				  //
+  __u32 lbkey = 0;
+  struct endpoint *lb = bpf_map_lookup_elem(&load_balancer, &lbkey);
+  if (!lb) {
+    return XDP_PASS;
+  }
+  outer->saddr = lb->ip; // use LB real IP as outer source
+
   outer->daddr = backend->ip;  // tunnel endpoint = backend node IP
   outer->check = 0;
 

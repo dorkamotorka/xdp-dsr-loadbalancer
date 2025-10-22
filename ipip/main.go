@@ -20,6 +20,7 @@ import (
 
 var (
 	ifname   string
+	loadBalancerIP     string
 	backends string
 )
 
@@ -33,10 +34,11 @@ func parseIPv4(s string) (uint32, error) {
 
 func main() {
 	flag.StringVar(&ifname, "i", "lo", "Network interface to attach eBPF programs")
+	flag.StringVar(&loadBalancerIP, "lb-ip", "", "Load Balancer Node/Real IP")
 	flag.StringVar(&backends, "backends", "", "IP addressed of backends (separated by ',')")
 	flag.Parse()
 
-	if backends == "" {
+	if backends == "" || loadBalancerIP == "" {
 		fmt.Fprintf(os.Stderr, "Error: missing required backend flags\n\n")
 		flag.Usage()
 		os.Exit(1)
@@ -80,6 +82,20 @@ func main() {
 		}
 
 		log.Printf("Added backend #%d: %s", i, backend)
+	}
+
+	lbIP, err := parseIPv4(loadBalancerIP)
+	if err != nil {
+		log.Fatalf("Invalid Load Balancer IP %q: %v", loadBalancerIP, err)
+	}
+
+	lbEp := lbEndpoint{
+		Ip: lbIP,
+	}
+
+	// Use index i as the map key to store multiple endpoints
+	if err := objs.lbMaps.LoadBalancer.Put(uint32(0), &lbEp); err != nil {
+		log.Fatalf("Error adding load balancer %s to eBPF map: %v", loadBalancerIP, err)
 	}
 
 	iface, err := net.InterfaceByName(ifname)
