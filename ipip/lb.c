@@ -199,7 +199,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
   struct endpoint *backend = bpf_map_lookup_elem(&backends, &key);
   if (!backend) {
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
 
   // Perform a FIB lookup
@@ -212,7 +212,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
                               bpf_ntohs(ip->tot_len));
   if (rc != BPF_FIB_LKUP_RET_SUCCESS) {
     log_fib_error(rc);
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
 
   // Make room for the new outer IPv4 header (20 bytes) between ETH and inner
@@ -220,7 +220,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   int adj = bpf_xdp_adjust_head(ctx, 0 - (int)sizeof(struct iphdr));
   if (adj < 0) {
     bpf_printk("Failed to adjust packet head");
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
 
   // Recompute data pointers after adjusting headed
@@ -267,7 +267,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   __u32 lbkey = 0;
   struct endpoint *lb = bpf_map_lookup_elem(&load_balancer, &lbkey);
   if (!lb) {
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
   outer->saddr = lb->ip; // use LB real IP as outer source
 

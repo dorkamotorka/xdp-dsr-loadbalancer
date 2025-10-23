@@ -174,7 +174,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
   struct endpoint *backend = bpf_map_lookup_elem(&backends, &key);
   if (!backend) {
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
 
   // Perform a FIB lookup
@@ -187,7 +187,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
                               bpf_ntohs(ip->tot_len));
   if (rc != BPF_FIB_LKUP_RET_SUCCESS) {
     log_fib_error(rc);
-    return XDP_PASS;
+    return XDP_ABORTED;
   }
 
   // Backend needs to have a virtual IP on the lo (same one as load balancer)
