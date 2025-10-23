@@ -17,6 +17,7 @@ struct four_tuple_t {
   __u32 dst_ip;
   __u16 src_port;
   __u16 dst_port;
+  __u8  protocol;
 };
 
 // Backend IPs and MAC addresses map
@@ -42,6 +43,7 @@ static __always_inline __u32 xdp_hash_tuple(struct four_tuple_t *tuple) {
   hash = (hash ^ tuple->dst_ip) * 16777619U;
   hash = (hash ^ tuple->src_port) * 16777619U;
   hash = (hash ^ tuple->dst_port) * 16777619U;
+  hash = (hash ^ tuple->protocol) * 16777619U;
   return hash;
 }
 
@@ -196,6 +198,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
                    // different backend are queried on consequitive request
                    // from the same client!
   four_tuple.dst_port = tcp->dest;
+  four_tuple.protocol = IPPROTO_TCP;
   __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
   struct endpoint *backend = bpf_map_lookup_elem(&backends, &key);
   if (!backend) {
