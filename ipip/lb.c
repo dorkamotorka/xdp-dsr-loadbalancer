@@ -4,9 +4,9 @@
 #include <bpf/bpf_helpers.h>
 #include "parse_helpers.h"
 
-#define NUM_BACKENDS 2
-#define ETH_ALEN 6 /* Octets in one ethernet addr	 */
-#define AF_INET 2
+#define NUM_BACKENDS 2 // Hardcoded number of backends
+#define ETH_ALEN 6 // Octets in one ethernet addr
+#define AF_INET 2 // Instead of including the whole sys/socket.h header
 
 struct endpoint {
   __u32 ip;
@@ -185,18 +185,11 @@ int xdp_load_balancer(struct xdp_md *ctx) {
              eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3],
              eth->h_dest[4], eth->h_dest[5]);
 
-  // Choose backend using consistent hashing (no routing table needed)
-  // Hash the 4-tuple for persistent backend routing
-  // (Could also be 5-tuple but we only showcase TCP traffic load balancing)
-  // Perform modulo with the number of backends which we hardcode for
-  // simplicity
+  // Choose backend using consistent hashing
   struct four_tuple_t four_tuple;
   four_tuple.src_ip = ip->saddr;
   four_tuple.dst_ip = ip->daddr;
-  four_tuple.src_port =
-      tcp->source; // NOTE: The client source port can change, that's why
-                   // different backend are queried on consequitive request
-                   // from the same client!
+  four_tuple.src_port = tcp->source;
   four_tuple.dst_port = tcp->dest;
   four_tuple.protocol = IPPROTO_TCP;
   __u32 key = xdp_hash_tuple(&four_tuple) % NUM_BACKENDS;
@@ -206,10 +199,6 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   }
 
   // Perform a FIB lookup
-  // In other words: How do I reach this IP network?” → “Use this interface
-  // (and maybe this next hop)”. Depending on the flag you provide to
-  // bpf_fib_lookup(), it changes how the lookup behaves - check tutorial
-  // content for more info
   struct bpf_fib_lookup fib = {};
   int rc = fib_lookup_v4_full(ctx, &fib, ip->daddr, backend->ip,
                               bpf_ntohs(ip->tot_len));
@@ -218,8 +207,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
     return XDP_ABORTED;
   }
 
-  // Make room for the new outer IPv4 header (20 bytes) between ETH and inner
-  // IPv4
+  // Make room for the new outer IPv4 header (20 bytes) between ETH and inner IPv4
   int adj = bpf_xdp_adjust_head(ctx, 0 - (int)sizeof(struct iphdr));
   if (adj < 0) {
     bpf_printk("Failed to adjust packet head");
@@ -242,7 +230,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
     return XDP_ABORTED;
   }
 
-  // Inner IPv4 header is now right after the new outer header
+  // Inner IPv4 header is now right after the new outer IP header
   struct iphdr *inner = (void *)(outer + 1);
   if ((void *)(inner + 1) > new_data_end) {
     return XDP_ABORTED;
@@ -263,10 +251,9 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   outer->tos = 0;
   outer->tot_len = bpf_htons(outer_len);
   outer->id = 0;
-  outer->frag_off = 0; // you could set DF=0 here to allow fragmentation
+  outer->frag_off = 0;
   outer->ttl = 64;
-  outer->protocol = IPPROTO_IPIP; // 4
-				  //
+  outer->protocol = IPPROTO_IPIP;
   __u32 lbkey = 0;
   struct endpoint *lb = bpf_map_lookup_elem(&load_balancer, &lbkey);
   if (!lb) {
@@ -274,7 +261,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
   }
   outer->saddr = lb->ip; // use LB real IP as outer source
 
-  outer->daddr = backend->ip;  // tunnel endpoint = backend node IP
+  outer->daddr = backend->ip;  // Outer IP header destination IP == backend node real IP
   outer->check = 0;
 
   // Compute outer L3 checksum from scratch
