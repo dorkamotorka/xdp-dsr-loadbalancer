@@ -160,7 +160,7 @@ int xdp_load_balancer(struct xdp_md *ctx) {
              eth->h_dest[0], eth->h_dest[1], eth->h_dest[2], eth->h_dest[3],
              eth->h_dest[4], eth->h_dest[5]);
 
-  // Choose backend using consistent hashing (no routing table needed)
+  // Choose backend using simple hashing (no routing table needed)
   // Hash the 4-tuple for persistent backend routing
   // (Could also be 5-tuple but we only showcase TCP traffic load balancing)
   // Perform modulo with the number of backends which we hardcode for
